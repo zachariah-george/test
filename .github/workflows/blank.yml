@@ -1,8 +1,9 @@
 name: Build and Release Apache HTTPD
 
 on:
-  repository_dispatch:
-    types: [apache_httpd_release]
+  push:
+    paths:
+      - '.github/workflows/blank.yml'
 
 jobs:
   build:
