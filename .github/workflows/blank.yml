@@ -1,56 +1,62 @@
 name: Build and Release Apache HTTPD
 
 on:
-  push:
-    branches:
-      - main
+  repository_dispatch:
+    types: [apache_httpd_release]
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout code
+    - name: Checkout
       uses: actions/checkout@v2
 
-    - name: Install Chocolatey
-      run: |
-        Set-ExecutionPolicy Bypass -Scope Process -Force
-        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
 
-    - name: Install build tools
+    - name: Install dependencies
       run: |
-        choco install -y visualstudio2019buildtools
+        python -m pip install --upgrade pip
+        pip install cmake
 
     - name: Build Apache HTTPD
       run: |
-        git clone https://github.com/apache/httpd.git
-        cd httpd
-        .\build\build.bat -p x64
+        # Download and extract Apache HTTPD source code
+        Invoke-WebRequest -Uri "https://downloads.apache.org/httpd/httpd-${{ steps.get_version.outputs.VERSION }}.tar.gz" -OutFile "httpd.tar.gz"
+        tar -xzvf httpd.tar.gz
+    
+        # Set up build environment
+        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
+    
+        # Configure Apache HTTPD
+        cd "httpd-${{ steps.get_version.outputs.VERSION }}"
+        perl srclib\apr\build\lineends.pl
+        perl srclib\apr\build\cvtdsp.pl -2005
+        perl srclib\apr-util\build\lineends.pl
+        perl srclib\apr-util\build\cvtdsp.pl -2005
+    
+        # Build Apache HTTPD
+        msbuild /p:Configuration=Release /p:Platform=x64 /p:OutDir=out\httpd\ Apache.Httpd.sln
+    
+        # Package the build
+        Compress-Archive -Path out\httpd\* -DestinationPath ${{ github.workspace }}\httpd-${{ steps.get_version.outputs.VERSION }}.zip
 
-    - name: Create a release tag
-      id: create_tag
+    - name: Get the version
+      id: get_version
       run: |
-        echo "Creating a release tag..."
-        git tag -a v1.0 -m "Release version 1.0"
-        git push origin v1.0
-        echo "::set-output name=tag::v1.0"
+        VERSION=$(grep -oP '(?<=AP_SERVER_BASEVERSION "Apache/).*(?=")' include/ap_release.h)
+        echo "::set-output name=VERSION::$VERSION"
 
     - name: Create Release
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: |
-          ./path/to/built/files/*
-        tag_name: ${{ steps.create_tag.outputs.tag }}
-        title: Release ${{ steps.create_tag.outputs.tag }}
-        body: |
-          Release ${{ steps.create_tag.outputs.tag }}
-
-    - name: Cleanup
-      run: |
-        Remove-Item -Recurse -Force httpd
-
-    - name: Test Apache installation
-      run: |
-        .\httpd -v
+        tag_name: ${{ steps.get_version.outputs.VERSION }}
+        release_name: Release ${{ steps.get_version.outputs.VERSION }}
+        draft: false
+        prerelease: false
