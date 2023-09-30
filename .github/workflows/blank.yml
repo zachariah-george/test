@@ -16,22 +16,17 @@ jobs:
         repository: 'apache/httpd'
         ref: '${{ github.event.client_payload.release.tag_name }}'
 
-    - name: Install dependencies
+    - name: Build Docker Image
       run: |
-        choco install -y nasm
-        choco install -y perl
-        choco install -y python
-        choco install -y cmake
-        choco install -y visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
+        docker build -t httpd-build .
 
     - name: Build Apache HTTPD
       run: |
-        cd srclib
-        git clone https://github.com/apache/apr.git
-        git clone https://github.com/apache/apr-util.git
-        cd ..
-        nmake /f Makefile.win _apache_
-        nmake /f Makefile.win installr
+        docker run --name httpd-build-container httpd-build
+
+    - name: Copy the build output
+      run: |
+        docker cp httpd-build-container:/Apache24/bin/httpd.exe ./httpd.exe
 
     - name: Create Release
       id: create_release
@@ -53,6 +48,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }} 
-        asset_path: ./Apache24/bin/httpd.exe
+        asset_path: ./httpd.exe
         asset_name: httpd.exe
         asset_content_type: application/octet-stream
