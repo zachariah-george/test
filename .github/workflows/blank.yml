@@ -1,0 +1,56 @@
+name: Build and Release Apache HTTPD
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Install Chocolatey
+      run: |
+        Set-ExecutionPolicy Bypass -Scope Process -Force
+        iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+
+    - name: Install build tools
+      run: |
+        choco install -y visualstudio2019buildtools
+
+    - name: Build Apache HTTPD
+      run: |
+        git clone https://github.com/apache/httpd.git
+        cd httpd
+        .\build\build.bat -p x64
+
+    - name: Create a release tag
+      id: create_tag
+      run: |
+        echo "Creating a release tag..."
+        git tag -a v1.0 -m "Release version 1.0"
+        git push origin v1.0
+        echo "::set-output name=tag::v1.0"
+
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ./path/to/built/files/*
+        tag_name: ${{ steps.create_tag.outputs.tag }}
+        title: Release ${{ steps.create_tag.outputs.tag }}
+        body: |
+          Release ${{ steps.create_tag.outputs.tag }}
+
+    - name: Cleanup
+      run: |
+        Remove-Item -Recurse -Force httpd
+
+    - name: Test Apache installation
+      run: |
+        .\httpd -v
