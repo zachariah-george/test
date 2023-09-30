@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/blank.yml'
-
+ 
 jobs:
   build:
     runs-on: windows-latest
