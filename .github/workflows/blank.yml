@@ -10,46 +10,28 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout
+    - name: Checkout repo
       uses: actions/checkout@v2
-
-    - name: Set up Python
-      uses: actions/setup-python@v2
       with:
-        python-version: '3.x'
+        repository: 'apache/httpd'
+        ref: '${{ github.event.client_payload.release.tag_name }}'
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        pip install cmake
+        choco install -y nasm
+        choco install -y perl
+        choco install -y python
+        choco install -y cmake
+        choco install -y visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
 
     - name: Build Apache HTTPD
       run: |
-        # Download and extract Apache HTTPD source code
-        Invoke-WebRequest -Uri "https://downloads.apache.org/httpd/httpd-${{ steps.get_version.outputs.VERSION }}.tar.gz" -OutFile "httpd.tar.gz"
-        tar -xzvf httpd.tar.gz
-    
-        # Set up build environment
-        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Auxiliary\Build\vcvars64.bat"
-    
-        # Configure Apache HTTPD
-        cd "httpd-${{ steps.get_version.outputs.VERSION }}"
-        perl srclib\apr\build\lineends.pl
-        perl srclib\apr\build\cvtdsp.pl -2005
-        perl srclib\apr-util\build\lineends.pl
-        perl srclib\apr-util\build\cvtdsp.pl -2005
-    
-        # Build Apache HTTPD
-        msbuild /p:Configuration=Release /p:Platform=x64 /p:OutDir=out\httpd\ Apache.Httpd.sln
-    
-        # Package the build
-        Compress-Archive -Path out\httpd\* -DestinationPath ${{ github.workspace }}\httpd-${{ steps.get_version.outputs.VERSION }}.zip
-
-    - name: Get the version
-      id: get_version
-      run: |
-        VERSION=$(grep -oP '(?<=AP_SERVER_BASEVERSION "Apache/).*(?=")' include/ap_release.h)
-        echo "::set-output name=VERSION::$VERSION"
+        cd srclib
+        git clone https://github.com/apache/apr.git
+        git clone https://github.com/apache/apr-util.git
+        cd ..
+        nmake /f Makefile.win _apache_
+        nmake /f Makefile.win installr
 
     - name: Create Release
       id: create_release
@@ -57,7 +39,20 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        tag_name: ${{ steps.get_version.outputs.VERSION }}
-        release_name: Release ${{ steps.get_version.outputs.VERSION }}
+        tag_name: ${{ github.event.client_payload.release.tag_name }}
+        release_name: Release ${{ github.event.client_payload.release.tag_name }}
+        body: |
+          New release of Apache HTTPD.
         draft: false
         prerelease: false
+
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} 
+        asset_path: ./Apache24/bin/httpd.exe
+        asset_name: httpd.exe
+        asset_content_type: application/octet-stream
