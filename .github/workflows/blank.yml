@@ -1,53 +1,37 @@
-name: Build and Release Apache HTTPD
+name: Build Apache HTTPD
 
 on:
   push:
-    paths:
-      - '.github/workflows/blank.yml'
- 
+    branches:
+      - master
+
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repo
+    - name: Checkout Apache HTTPD code
       uses: actions/checkout@v2
       with:
-        repository: 'apache/httpd'
-        ref: '${{ github.event.client_payload.release.tag_name }}'
+        repository: apache/httpd
+        ref: 'refs/tags/latest'
 
-    - name: Build Docker Image
-      run: |
-        docker build -t httpd-build .
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v1.0.2
 
-    - name: Build Apache HTTPD
-      run: |
-        docker run --name httpd-build-container httpd-build
+    - name: Setup Nuget
+      uses: NuGet/setup-nuget@v1.0.5
 
-    - name: Copy the build output
-      run: |
-        docker cp httpd-build-container:/Apache24/bin/httpd.exe ./httpd.exe
+    - name: Restore Nuget packages
+      run: nuget restore httpd.sln
 
-    - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Build
+      run: msbuild /p:Configuration=Release httpd.sln
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v2
       with:
-        tag_name: ${{ github.event.client_payload.release.tag_name }}
-        release_name: Release ${{ github.event.client_payload.release.tag_name }}
-        body: |
-          New release of Apache HTTPD.
-        draft: false
-        prerelease: false
-
-    - name: Upload Release Asset
-      id: upload-release-asset 
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }} 
-        asset_path: ./httpd.exe
-        asset_name: httpd.exe
-        asset_content_type: application/octet-stream
+        name: httpd-build
+        path: |
+          **/Release/*.dll
+          **/Release/*.exe
