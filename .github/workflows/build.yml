@@ -1,4 +1,4 @@
-name: Build a Apache HTTPD
+name: Build Apache HTTPD
 
 on:
   push:
